@@ -1,0 +1,9 @@
+aiofiles==23.2.1
+aiohttp==3.8.3
+beautifulsoup4==4.12.2
+numpy==1.26.2
+rich==13.7.0
+undetected_chromedriver==3.5.4
+user_agent==0.1.10
+opencv-python==4.8.1.78 
+lxml==4.9.4
