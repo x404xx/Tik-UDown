@@ -22,5 +22,5 @@ class ScriptTagNotFoundError(TiktokException):
     """Raised when the script tag is not found in the Tiktok content."""
 
 
-class UrlLimitError(TiktokException):
-    """Raised when an invalid limiter input is provided for a Tiktok URL."""
+class TextfileNotFoundError(TiktokException):
+    """Raised when a Tiktok URL is not found."""

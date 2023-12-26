@@ -3,11 +3,12 @@ import asyncio
 import os
 import time
 
-from rich import print
 from rich.traceback import install as traceback_install
 
 from api.asyncdownloader import AsyncDownloader
 from api.tiktokscraper import TiktokScraper
+from terminal.console import console
+from terminal.logo import ProgramLogo
 
 traceback_install(theme="vim")
 
@@ -17,8 +18,16 @@ def parse_arguments():
     parser.add_argument(
         "-u",
         "--username",
+        default=None,
         type=str,
         help="TikTok username, Example (google, @google, https://www.tiktok.com/@google)",
+    )
+    parser.add_argument(
+        "-do",
+        "--download_only",
+        default=False,
+        action="store_true",
+        help="For download only using an existing text file",
     )
     parser.add_argument(
         "-sj",
@@ -70,7 +79,7 @@ def timer_wrapper(coroutine):
         start_time = time.time()
         await coroutine(*args, **kwargs)
         elapsed_time = time.time() - start_time
-        print(f"\n[green]Total elapsed time: {elapsed_time:.2f} seconds[/]\n")
+        console.print(f"\n[green]Total elapsed time: {elapsed_time:.2f} seconds[/]\n")
 
     return wrapper
 
@@ -79,23 +88,33 @@ def timer_wrapper(coroutine):
 async def main():
     os.system("cls" if os.name == "nt" else "clear")
     args = parse_arguments()
-    if not args.username:
-        os.system("python main.py -h" if os.name == "nt" else "python3 main.py -h")
-        return
-    tiktok_scraper = TiktokScraper(
-        channel_url=args.username,
-        headless=args.headless,
-        enable_log=args.enable_log,
-        max_windows=args.maximized_windows,
-    )
-    username = tiktok_scraper.get_username
-    tiktok_scraper.scrape_video_link()
-    await AsyncDownloader(
-        username=username,
-        save_json=args.save_json,
-        transient=args.transient,
-        instant_clear=args.instant_clear,
-    )
+    if args.download_only:
+        ProgramLogo.setup_logo()
+        await AsyncDownloader(
+            username=args.username,
+            save_json=args.save_json,
+            transient=args.transient,
+            instant_clear=args.instant_clear,
+        )
+    else:
+        if not args.username:
+            os.system("python main.py -h" if os.name == "nt" else "python3 main.py -h")
+            return
+
+        tiktok_scraper = TiktokScraper(
+            channel_url=args.username,
+            headless=args.headless,
+            enable_log=args.enable_log,
+            max_windows=args.maximized_windows,
+        )
+        username = tiktok_scraper.get_username
+        tiktok_scraper.scrape_video_link()
+        await AsyncDownloader(
+            username=username,
+            save_json=args.save_json,
+            transient=args.transient,
+            instant_clear=args.instant_clear,
+        )
 
 
 if __name__ == "__main__":

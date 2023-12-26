@@ -5,10 +5,11 @@ from typing import Any
 
 import cv2 as cv
 import numpy as np
-from rich import print
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
+
+from terminal.console import console
 
 
 class CaptchaSolver:
@@ -57,7 +58,7 @@ class CaptchaSolver:
             .text
         )
         success = "Verification complete" in message or "complete" in message
-        print(
+        console.print(
             f":heavy_check_mark:  [green1]Captcha solved.[/]"
             if success
             else ":no_entry: [red1]Captcha solve failed. [cyan1]Now retrying..[/]"

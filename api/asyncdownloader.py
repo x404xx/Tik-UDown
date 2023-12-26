@@ -6,16 +6,20 @@ from http.cookies import SimpleCookie
 
 import aiofiles
 import aiohttp
+import inquirer
 from bs4 import BeautifulSoup, Tag
-from rich import print
+from rich.live import Live
 from rich.progress import Progress, TaskID
 from rich.prompt import Prompt
 from user_agent import generate_user_agent
 
-from exception import ScriptTagNotFoundError, UrlLimitError
+from exception import ScriptTagNotFoundError, TextfileNotFoundError
+from terminal.console import console
+from terminal.progress import ProgressBar
 
 
 class VideoDownloader:
+    TXT_FILE = None
     USER_AGENT = generate_user_agent()
 
     async def __aenter__(self):
@@ -65,7 +69,8 @@ class VideoDownloader:
         create_time: str,
         cookies: SimpleCookie,
         tiktok_video_url: str,
-        progress: Progress,
+        job_progress: Progress,
+        overall_progress: Progress,
         overall_task: TaskID,
         instant_clear: bool,
     ):
@@ -93,13 +98,16 @@ class VideoDownloader:
                     video_download_url,
                     create_time,
                     tiktok_video_url,
-                    progress,
+                    job_progress,
+                    overall_progress,
                     overall_task,
                     instant_clear,
                 )
         else:
-            print(f"[red1] Couldn't find video download URL for[/] {tiktok_video_url}")
-            progress.update(overall_task, advance=1)
+            console.print(
+                f"[red1] Couldn't find video download URL for[/] {tiktok_video_url}"
+            )
+            overall_progress.update(overall_task, advance=1)
 
     async def _handle_video_response(
         self,
@@ -107,7 +115,8 @@ class VideoDownloader:
         video_download_url: str,
         create_time: str,
         tiktok_video_url: str,
-        progress: Progress,
+        job_progress: Progress,
+        overall_progress: Progress,
         overall_task: TaskID,
         instant_clear: bool,
     ):
@@ -125,27 +134,33 @@ class VideoDownloader:
 
             async with aiofiles.open(filename, "wb") as file:
                 content_length = int(response.headers.get("Content-Length", 0))
-                task = progress.add_task(
-                    f"[blue_violet]Downloading [blue1]{video_id}", total=content_length
+                job_task = job_progress.add_task(
+                    f"[blue_violet]Downloading [blue1]{video_id}",
+                    total=content_length,
                 )
                 received = 0
                 async for chunk in response.content.iter_any():
                     if chunk:
                         await file.write(chunk)
                         received += len(chunk)
-                        progress.update(task, completed=received)
-                progress.update(overall_task, advance=1)
+                        job_progress.update(job_task, completed=received)
+
+                overall_progress.update(overall_task, advance=1)
+
             if instant_clear:
-                progress.remove_task(task)
+                job_progress.remove_task(job_task)
         else:
-            print(f"Streaming failed for url {video_download_url}: {response.status}")
+            console.print(
+                f"Streaming failed for url {video_download_url}: {response.status}"
+            )
 
     async def _download_video(
         self,
         session: aiohttp.ClientSession,
         result: dict,
         tiktok_video_url: str,
-        progress: Progress,
+        job_progress: Progress,
+        overall_progress: Progress,
         overall_task: TaskID,
         instant_clear: bool,
     ):
@@ -155,36 +170,59 @@ class VideoDownloader:
             result["createTime"],
             result["cookies"],
             tiktok_video_url,
-            progress,
+            job_progress,
+            overall_progress,
             overall_task,
             instant_clear,
         )
 
     def load_urls(self, username: str):
         url_directory = "Tiktok URL"
-        filename = os.path.join(url_directory, f"{username}.txt")
-        with open(filename) as file:
+        if username:
+            filename = os.path.join(url_directory, f"{username}.txt")
+        else:
+            text_file_list = [f for f in os.listdir(url_directory)]
+            if not text_file_list:
+                raise TextfileNotFoundError(
+                    f"No text file found in the folder '{url_directory}'"
+                )
+
+            text_file = inquirer.List(
+                "filename",
+                message="Select a filename:",
+                choices=text_file_list,
+            )
+            answer = inquirer.prompt([text_file])
+            self.TXT_FILE = answer["filename"]
+            filename = os.path.join(url_directory, self.TXT_FILE)
+
+        with open(filename, "r") as file:
             return [url.strip() for url in file if url.strip()]
 
     def url_limiter(self, tiktok_video_urls: list):
-        user_input = Prompt.ask(
-            f"Found '[green1]{len(tiktok_video_urls)}[/]' URLs! [violet]Do you want to limit URLs?[/] Press '[blue]ENTER[/]' to skip",
+        prompt_for_input = lambda message: Prompt.ask(message)
+
+        user_input = prompt_for_input(
+            f"Found '[green1]{len(tiktok_video_urls)}[/]' URLs! [violet]Do you want to limit URLs?[/] Press '[blue]ENTER[/]' to skip"
         )
-        if not user_input.strip():
-            print()
-            url_limit = tiktok_video_urls
-        elif user_input.isdigit():
-            url_limit = tiktok_video_urls[: int(user_input)]
-            print()
-        else:
-            raise UrlLimitError("Please check your input!")
-        return url_limit
+        while True:
+            if not user_input.strip():
+                console.print()
+                return tiktok_video_urls
+            elif user_input.isdigit():
+                console.print()
+                return tiktok_video_urls[: int(user_input)]
+            else:
+                user_input = prompt_for_input(
+                    f"[red1]Input error![/] [violet]Enter only digits[/] or Press '[blue]ENTER[/]' to download all '[green1]{len(tiktok_video_urls)}[/]' URLs"
+                )
 
     async def download_videos(
         self,
         session: aiohttp.ClientSession,
         url_limiter: list,
-        progress: Progress,
+        job_progress: Progress,
+        overall_progress: Progress,
         overall_task: TaskID,
         username: str,
         save_json: bool,
@@ -199,13 +237,25 @@ class VideoDownloader:
         if save_json:
             json_directory = "Tiktok JSON"
             os.makedirs(json_directory, exist_ok=True)
-            filename = os.path.join(json_directory, f"{username}.json")
+            if username:
+                filename = os.path.join(json_directory, f"{username}.json")
+            else:
+                filename = os.path.join(
+                    json_directory, f"{self.TXT_FILE.split('.')[0]}.json"
+                )
+
             with open(filename, "w") as file:
                 json.dump(results, file, indent=4)
 
         videos_coro = [
             self._download_video(
-                session, result, tiktok_video_url, progress, overall_task, instant_clear
+                session,
+                result,
+                tiktok_video_url,
+                job_progress,
+                overall_progress,
+                overall_task,
+                instant_clear,
             )
             for result, tiktok_video_url in zip(results, url_limiter)
         ]
@@ -218,14 +268,20 @@ async def AsyncDownloader(
     async with VideoDownloader() as downloader:
         tiktok_video_urls = downloader.load_urls(username)
         url_limiter = downloader.url_limiter(tiktok_video_urls)
-        with Progress(transient=transient) as progress:
-            overall_task = progress.add_task(
-                "[yellow1]Overall progress...", total=len(url_limiter)
-            )
+        job_progress, overall_progress = ProgressBar.setup_progress_bars()
+        overall_task = overall_progress.add_task(
+            "[yellow1]Overall progress...", total=len(url_limiter)
+        )
+        with Live(
+            ProgressBar.create_progess_panel(job_progress, overall_progress),
+            refresh_per_second=10,
+            transient=transient,
+        ):
             await downloader.download_videos(
                 downloader.client,
                 url_limiter,
-                progress,
+                job_progress,
+                overall_progress,
                 overall_task,
                 username,
                 save_json,

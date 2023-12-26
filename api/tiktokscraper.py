@@ -3,34 +3,24 @@ import os
 import time
 
 import undetected_chromedriver as uc
-from rich.box import HEAVY
-from rich.console import Console
-from rich.panel import Panel
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 from exception import AccountNotFoundError, InvalidUrlError
+from terminal.console import console
+from terminal.logo import ProgramLogo
 
 from .captchasolver import CaptchaSolver
 
-LOGO = """
-░░░░░░░░ ░░ ░░   ░░     ░░    ░░ ░░░░░░   ░░░░░░  ░░     ░░ ░░░    ░░    
-   ▒▒    ▒▒ ▒▒  ▒▒      ▒▒    ▒▒ ▒▒   ▒▒ ▒▒    ▒▒ ▒▒     ▒▒ ▒▒▒▒   ▒▒    
-   ▒▒    ▒▒ ▒▒▒▒▒       ▒▒    ▒▒ ▒▒   ▒▒ ▒▒    ▒▒ ▒▒  ▒  ▒▒ ▒▒ ▒▒  ▒▒    
-   ▓▓    ▓▓ ▓▓  ▓▓      ▓▓    ▓▓ ▓▓   ▓▓ ▓▓    ▓▓ ▓▓ ▓▓▓ ▓▓ ▓▓  ▓▓ ▓▓    
-   ██    ██ ██   ██      ██████  ██████   ██████   ███ ███  ██   ████ ██ 
-                                                BY:ˣ⁴⁰⁴ˣˣ"""
 
-
-class TiktokScraper(CaptchaSolver):
+class TiktokScraper(CaptchaSolver, ProgramLogo):
     def __init__(
         self, channel_url: str, headless: bool, enable_log: bool, max_windows: bool
     ):
         self.enable_log = enable_log
         self.headless = headless
         self.max_windows = max_windows
-        self.console = Console()
         self.channel_url = self._sanitize_url(channel_url)
         self.driver = self._setup_driver()
         self.scroll_distance = 5000
@@ -56,12 +46,6 @@ class TiktokScraper(CaptchaSolver):
         driver.implicitly_wait(3)
         return driver
 
-    @property
-    def _setup_logo(self):
-        logo_width = max(len(line) for line in LOGO.split("\n"))
-        padding = (self.console.width - logo_width) // 2
-        return "\n".join(f"{' ' * padding}{line}" for line in LOGO.split("\n"))
-
     def _setup_logging(self):
         log_name = "tiktok.log"
         log_directory = "Tiktok LOG"
@@ -77,14 +61,8 @@ class TiktokScraper(CaptchaSolver):
         )
 
     def _get_source(self):
-        self.console.print(
-            Panel(
-                f"[blue1]{self._setup_logo}[/]",
-                border_style="purple",
-                box=HEAVY,
-            ),
-        )
-        with self.console.status(
+        self.setup_logo()
+        with console.status(
             f"[cyan]Opening homepage[/] - {self.channel_url}",
             spinner="point",
             spinner_style="magenta",
@@ -107,18 +85,18 @@ class TiktokScraper(CaptchaSolver):
     def _is_captcha(self, captcha_verify: str):
         try:
             self.driver.find_element(By.ID, captcha_verify)
-            self.console.print(
+            console.print(
                 ":lock_with_ink_pen: [red]Found Captcha. [yellow1]Trying to solve.."
             )
             return True
         except NoSuchElementException:
-            self.console.print(
+            console.print(
                 ":unlocked: [green]Captcha not found. [yellow1]Trying to grab links..[/]"
             )
             return False
 
     def _scroll_page(self):
-        with self.console.status(
+        with console.status(
             "[cyan]Scrolling page to the bottom..[/]",
             spinner="point",
             spinner_style="magenta",
@@ -136,7 +114,7 @@ class TiktokScraper(CaptchaSolver):
                 )
                 if current_height == prev_height:
                     status.stop()
-                    self.console.print(
+                    console.print(
                         ":checkered_flag: [pale_green1]Please wait! Saving video links to the text file..[/]"
                     )
                     break
@@ -176,7 +154,8 @@ class TiktokScraper(CaptchaSolver):
 
         with open(filename, "w", encoding="utf-8") as file:
             file.write(data)
-        self.console.print(
+
+        console.print(
             f'\n{len(video_links)} links has been saved in "[blue1]{filename}[/]"\n'
         )
         time.sleep(1)
